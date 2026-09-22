@@ -10,33 +10,53 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as EditorProjectIdRouteImport } from './routes/editor.$projectId'
+import { Route as SettingsProjectIdRouteImport } from './routes/settings.$projectId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const EditorProjectIdRoute = EditorProjectIdRouteImport.update({
+  id: '/editor/$projectId',
+  path: '/editor/$projectId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsProjectIdRoute = SettingsProjectIdRouteImport.update({
+  id: '/settings/$projectId',
+  path: '/settings/$projectId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/editor/$projectId': typeof EditorProjectIdRoute
+  '/settings/$projectId': typeof SettingsProjectIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/editor/$projectId': typeof EditorProjectIdRoute
+  '/settings/$projectId': typeof SettingsProjectIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/editor/$projectId': typeof EditorProjectIdRoute
+  '/settings/$projectId': typeof SettingsProjectIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/editor/$projectId' | '/settings/$projectId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/editor/$projectId' | '/settings/$projectId'
+  id: '__root__' | '/' | '/editor/$projectId' | '/settings/$projectId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  EditorProjectIdRoute: typeof EditorProjectIdRoute
+  SettingsProjectIdRoute: typeof SettingsProjectIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +68,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/editor/$projectId': {
+      id: '/editor/$projectId'
+      path: '/editor/$projectId'
+      fullPath: '/editor/$projectId'
+      preLoaderRoute: typeof EditorProjectIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/$projectId': {
+      id: '/settings/$projectId'
+      path: '/settings/$projectId'
+      fullPath: '/settings/$projectId'
+      preLoaderRoute: typeof SettingsProjectIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  EditorProjectIdRoute: EditorProjectIdRoute,
+  SettingsProjectIdRoute: SettingsProjectIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
