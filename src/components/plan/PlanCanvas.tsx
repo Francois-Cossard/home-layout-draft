@@ -181,15 +181,12 @@ export function PlanCanvas({ readOnly = false, onContextMenu, viewRef }: Props) 
     (p: Point): Wall | null => {
       if (!project) return null;
       let best: Wall | null = null;
-      let bestD = HIT_PX / view.zoom + 8;
+      let bestD = Infinity;
       for (const w of project.walls) {
         const { distance } = projectToWall(p, w);
-        const threshold = Math.max(bestD, w.thickness / 2 + 4);
-        if (distance < threshold && distance < bestD + w.thickness / 2) {
-          if (!best || distance < bestD) {
-            best = w;
-            bestD = distance;
-          }
+        if (distance < w.thickness / 2 + HIT_PX / view.zoom && distance < bestD) {
+          best = w;
+          bestD = distance;
         }
       }
       return best;
