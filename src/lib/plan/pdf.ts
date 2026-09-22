@@ -63,16 +63,16 @@ export async function exportPlanPdf(project: Project, opts: ExportOptions) {
 
   // Clip to drawing area when the plan overflows the page at fixed scale.
   doc.saveGraphicsState();
-  doc.rect(MARGIN, MARGIN, availW, availH, null as unknown as string);
+  doc.rect(MARGIN, MARGIN, availW, availH, null);
   doc.clip();
   doc.discardPath();
 
   const polygon = (pts: Point[], style: "F" | "S" | "FD") => {
-    const [x0, y0] = P(pts[0]);
+    const [x0, y0] = P(pts[0]!);
     const segs: [number, number][] = [];
     let prev: [number, number] = [x0, y0];
     for (let i = 1; i < pts.length; i++) {
-      const cur = P(pts[i]);
+      const cur = P(pts[i]!);
       segs.push([cur[0] - prev[0], cur[1] - prev[1]]);
       prev = cur;
     }
@@ -80,8 +80,8 @@ export async function exportPlanPdf(project: Project, opts: ExportOptions) {
   };
   const polyline = (pts: Point[]) => {
     for (let i = 1; i < pts.length; i++) {
-      const [ax, ay] = P(pts[i - 1]);
-      const [bx, by] = P(pts[i]);
+      const [ax, ay] = P(pts[i - 1]!);
+      const [bx, by] = P(pts[i]!);
       doc.line(ax, ay, bx, by);
     }
   };
