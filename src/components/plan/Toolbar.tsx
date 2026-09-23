@@ -4,6 +4,7 @@ import {
   BrickWall,
   DoorOpen,
   Home,
+  Armchair,
   MousePointer2,
   Redo2,
   Ruler,
@@ -20,6 +21,7 @@ const TOOLS: { id: Tool; label: string; key: string; icon: typeof MousePointer2 
   { id: "door", label: "Door", key: "D", icon: DoorOpen },
   { id: "window", label: "Window", key: "N", icon: Blinds },
   { id: "dimension", label: "Dimension", key: "M", icon: Ruler },
+  { id: "furniture", label: "Furniture library", key: "F", icon: Armchair },
 ];
 
 export function Toolbar() {
@@ -67,4 +69,5 @@ export const TOOL_KEYS: Record<string, Tool> = {
   d: "door",
   n: "window",
   m: "dimension",
+  f: "furniture",
 };

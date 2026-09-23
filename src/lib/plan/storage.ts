@@ -1,10 +1,23 @@
 import { uid } from "./geometry";
-import type { Door, PlanData, Project, Room, Wall, WindowEl } from "./types";
+import type { Door, FurnitureDefinition, PlanData, Project, Room, Wall, WindowEl } from "./types";
 
 const KEY = "planche.projects.v1";
+const FURNITURE_KEY = "planche.furniture.v1";
 
 export function emptyPlan(): PlanData {
-  return { walls: [], rooms: [], doors: [], windows: [], dimensions: [] };
+  return { walls: [], rooms: [], doors: [], windows: [], dimensions: [], furniture: [] };
+}
+
+function migrateProject(project: Project): Project {
+  return {
+    ...emptyPlan(),
+    ...project,
+    walls: (project.walls ?? []).map((wall) => ({
+      ...wall,
+      wall_type: ((wall.wall_type as string) === "exterior" ? "structural" : (wall.wall_type as string) === "interior" ? "drywall" : wall.wall_type),
+    })),
+    furniture: project.furniture ?? [],
+  };
 }
 
 export function loadProjects(): Project[] {
@@ -17,7 +30,7 @@ export function loadProjects(): Project[] {
   }
   try {
     const parsed = JSON.parse(raw) as Project[];
-    return parsed.map((p) => ({ ...emptyPlan(), ...p }));
+    return parsed.map(migrateProject);
   } catch {
     return [];
   }
@@ -59,6 +72,27 @@ export function createProject(name: string): Project {
   return project;
 }
 
+export function loadFurnitureLibrary(): FurnitureDefinition[] {
+  if (typeof window === "undefined") return [];
+  try {
+    return JSON.parse(window.localStorage.getItem(FURNITURE_KEY) ?? "[]") as FurnitureDefinition[];
+  } catch {
+    return [];
+  }
+}
+
+export function saveFurnitureDefinition(definition: FurnitureDefinition) {
+  const items = loadFurnitureLibrary();
+  const index = items.findIndex((item) => item.id === definition.id);
+  if (index >= 0) items[index] = definition;
+  else items.unshift(definition);
+  window.localStorage.setItem(FURNITURE_KEY, JSON.stringify(items));
+}
+
+export function deleteFurnitureDefinition(id: string) {
+  window.localStorage.setItem(FURNITURE_KEY, JSON.stringify(loadFurnitureLibrary().filter((item) => item.id !== id)));
+}
+
 /* ------------------------------------------------------------------ */
 /* Demo data                                                           */
 /* ------------------------------------------------------------------ */
@@ -70,7 +104,7 @@ function wall(
   sy: number,
   ex: number,
   ey: number,
-  wall_type: Wall["wall_type"] = "exterior",
+  wall_type: Wall["wall_type"] = "structural",
 ): Wall {
   return {
     id,
@@ -79,7 +113,7 @@ function wall(
     start_y: sy,
     end_x: ex,
     end_y: ey,
-    thickness: wall_type === "exterior" ? 25 : 12,
+    thickness: wall_type === "structural" ? 25 : 12,
     wall_type,
   };
 }
@@ -132,6 +166,7 @@ function demoProjects(): Project[] {
       { id: uid(), project_id: studioId, start_x: 0, start_y: -80, end_x: 500, end_y: -80 },
       { id: uid(), project_id: studioId, start_x: 580, start_y: 0, end_x: 580, end_y: 500 },
     ],
+    furniture: [],
   };
 
   const t3: Project = {
@@ -146,10 +181,10 @@ function demoProjects(): Project[] {
       wall(t3Id, "t-right", 1000, 0, 1000, 800),
       wall(t3Id, "t-bottom", 1000, 800, 0, 800),
       wall(t3Id, "t-left", 0, 800, 0, 0),
-      wall(t3Id, "t-mid-v", 550, 0, 550, 800, "interior"),
-      wall(t3Id, "t-bed-split", 550, 400, 1000, 400, "interior"),
-      wall(t3Id, "t-living-split", 0, 500, 550, 500, "interior"),
-      wall(t3Id, "t-kitchen-bath", 300, 500, 300, 800, "interior"),
+      wall(t3Id, "t-mid-v", 550, 0, 550, 800, "drywall"),
+      wall(t3Id, "t-bed-split", 550, 400, 1000, 400, "drywall"),
+      wall(t3Id, "t-living-split", 0, 500, 550, 500, "drywall"),
+      wall(t3Id, "t-kitchen-bath", 300, 500, 300, 800, "drywall"),
     ],
     rooms: [
       room(t3Id, "Living room", 0, 0, 550, 500),
@@ -177,6 +212,7 @@ function demoProjects(): Project[] {
       { id: uid(), project_id: t3Id, start_x: 0, start_y: -90, end_x: 1000, end_y: -90 },
       { id: uid(), project_id: t3Id, start_x: -90, start_y: 0, end_x: -90, end_y: 800 },
     ],
+    furniture: [],
   };
 
   return [t3, studio];

@@ -25,6 +25,19 @@ export function wallNormal(w: Wall): Point {
   return { x: -d.y, y: d.x };
 }
 
+export function readableAngleDegrees(a: Point, b: Point): number {
+  let angle = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+  if (angle > 90 || angle < -90) angle += 180;
+  return angle;
+}
+
+export function wallDimensionGeometry(wall: Wall, offset = 34) {
+  const n = wallNormal(wall);
+  const a = { x: wall.start_x + n.x * offset, y: wall.start_y + n.y * offset };
+  const b = { x: wall.end_x + n.x * offset, y: wall.end_y + n.y * offset };
+  return { a, b, normal: n, angle: readableAngleDegrees(a, b) };
+}
+
 export function pointOnWall(w: Wall, t: number): Point {
   const d = wallDir(w);
   return { x: w.start_x + d.x * t, y: w.start_y + d.y * t };
