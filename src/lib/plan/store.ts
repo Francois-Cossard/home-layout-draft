@@ -6,7 +6,7 @@ import type { PlanData, Project, Selection, Tool } from "./types";
 const HISTORY_LIMIT = 100;
 
 function pick(p: Project): PlanData {
-  return { walls: p.walls, rooms: p.rooms, doors: p.doors, windows: p.windows, dimensions: p.dimensions };
+  return { walls: p.walls, rooms: p.rooms, doors: p.doors, windows: p.windows, dimensions: p.dimensions, furniture: p.furniture };
 }
 
 interface EditorState {
@@ -127,7 +127,10 @@ export const useEditor = create<EditorState>((set, get) => ({
           return { ...d, windows: d.windows.filter((r) => r.id !== id) };
         case "dimension":
           return { ...d, dimensions: d.dimensions.filter((r) => r.id !== id) };
+        case "furniture":
+          return { ...d, furniture: d.furniture.filter((item) => item.id !== id) };
       }
+      return d;
     });
     set({ selection: null });
   },
@@ -190,7 +193,15 @@ export const useEditor = create<EditorState>((set, get) => ({
           newSel = { kind, id: copy.id };
           return { ...d, dimensions: [...d.dimensions, copy] };
         }
+        case "furniture": {
+          const item = d.furniture.find((value) => value.id === id);
+          if (!item) return d;
+          const copy = { ...item, id: uid(), center_x: item.center_x + off, center_y: item.center_y + off };
+          newSel = { kind, id: copy.id };
+          return { ...d, furniture: [...d.furniture, copy] };
+        }
       }
+      return d;
     });
     if (newSel) set({ selection: newSel });
   },
