@@ -166,6 +166,7 @@ function demoProjects(): Project[] {
       { id: uid(), project_id: studioId, start_x: 0, start_y: -80, end_x: 500, end_y: -80 },
       { id: uid(), project_id: studioId, start_x: 580, start_y: 0, end_x: 580, end_y: 500 },
     ],
+    furniture: [],
   };
 
   const t3: Project = {
@@ -211,6 +212,7 @@ function demoProjects(): Project[] {
       { id: uid(), project_id: t3Id, start_x: 0, start_y: -90, end_x: 1000, end_y: -90 },
       { id: uid(), project_id: t3Id, start_x: -90, start_y: 0, end_x: -90, end_y: 800 },
     ],
+    furniture: [],
   };
 
   return [t3, studio];
