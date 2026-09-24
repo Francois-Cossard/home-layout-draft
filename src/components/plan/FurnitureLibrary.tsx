@@ -91,11 +91,11 @@ function FurnitureBuilder({ onCancel, onSaved }: { onCancel: () => void; onSaved
   );
 }
 
-export function Primitive({ shape, preview = false }: { shape: FurniturePrimitive; preview?: boolean }) {
+export function Primitive({ shape, preview = false, strokeWidth = 2 }: { shape: FurniturePrimitive; preview?: boolean; strokeWidth?: number }) {
   const cls = preview ? "stroke-blueprint" : "stroke-ink";
-  if (shape.kind === "line") return <line x1={shape.x1} y1={shape.y1} x2={shape.x2} y2={shape.y2} className={cls} strokeWidth="2" />;
-  if (shape.kind === "rect") return <rect x={shape.x} y={shape.y} width={shape.width} height={shape.height} className={`${cls} fill-none`} strokeWidth="2" />;
-  return <circle cx={shape.cx} cy={shape.cy} r={shape.radius} className={`${cls} fill-none`} strokeWidth="2" />;
+  if (shape.kind === "line") return <line x1={shape.x1} y1={shape.y1} x2={shape.x2} y2={shape.y2} className={cls} strokeWidth={strokeWidth} />;
+  if (shape.kind === "rect") return <rect x={shape.x} y={shape.y} width={shape.width} height={shape.height} className={`${cls} fill-none`} strokeWidth={strokeWidth} />;
+  return <circle cx={shape.cx} cy={shape.cy} r={shape.radius} className={`${cls} fill-none`} strokeWidth={strokeWidth} />;
 }
 
 function FurniturePreview({ item }: { item: FurnitureDefinition }) { return <svg viewBox={`-5 -5 ${item.width + 10} ${item.height + 10}`} className="h-10 w-12 shrink-0 bg-paper">{item.primitives.map((shape) => <Primitive key={shape.id} shape={shape} />)}</svg>; }
