@@ -801,7 +801,7 @@ function WallGraphic({ wall, px, tone }: { wall: Wall; px: (n: number) => number
   const fill = tone === "selection" ? "fill-selection" : tone === "blueprint" ? "fill-blueprint" : "fill-wall";
   const n = { x: -wallDir(wall).y, y: wallDir(wall).x };
   const h = wall.thickness / 2;
-  const pts = [
+  const pts: [Point, Point, Point, Point] = [
     { x: wall.start_x + n.x * h, y: wall.start_y + n.y * h },
     { x: wall.end_x + n.x * h, y: wall.end_y + n.y * h },
     { x: wall.end_x - n.x * h, y: wall.end_y - n.y * h },
