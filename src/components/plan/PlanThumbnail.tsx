@@ -1,4 +1,5 @@
-import { doorGeometry, planBounds, pointsToPath } from "@/lib/plan/geometry";
+import { doorGeometry, furnitureTransform, planBounds, pointsToPath, wallFaces } from "@/lib/plan/geometry";
+import { Primitive } from "./FurnitureLibrary";
 import type { PlanData } from "@/lib/plan/types";
 
 export function PlanThumbnail({ data, className }: { data: PlanData; className?: string }) {
@@ -22,17 +23,19 @@ export function PlanThumbnail({ data, className }: { data: PlanData; className?:
           strokeDasharray={`${k * 4} ${k * 3}`}
         />
       ))}
-      {data.walls.map((wall) => (
-        <line
-          key={wall.id}
-          x1={wall.start_x}
-          y1={wall.start_y}
-          x2={wall.end_x}
-          y2={wall.end_y}
-          className="stroke-wall"
-          strokeWidth={Math.max(wall.thickness, k * 2)}
-          strokeLinecap="square"
-        />
+      {data.walls.map((wall) => {
+        const f = wallFaces(wall);
+        const d = pointsToPath([f.a[0], f.a[1], f.b[1], f.b[0]], true);
+        return wall.wall_type === "structural" ? (
+          <path key={wall.id} d={d} className="fill-wall stroke-wall" strokeWidth={k * 0.5} />
+        ) : (
+          <path key={wall.id} d={d} className="fill-paper stroke-wall" strokeWidth={k * 0.8} />
+        );
+      })}
+      {(data.furniture ?? []).map((f) => (
+        <g key={f.id} transform={furnitureTransform(f)}>
+          {f.primitives.map((shape) => <Primitive key={shape.id} shape={shape} strokeWidth={k * 0.7} />)}
+        </g>
       ))}
       {data.doors.map((d) => {
         const wall = data.walls.find((x) => x.id === d.wall_id);
