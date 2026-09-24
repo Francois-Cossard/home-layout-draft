@@ -1,4 +1,4 @@
-import type { Door, PlanData, Point, Units, Wall } from "./types";
+import type { Door, FurniturePlacement, FurniturePrimitive, PlanData, Point, Units, Wall } from "./types";
 
 export const CM_PER_FOOT = 30.48;
 
@@ -110,6 +110,11 @@ export function planBounds(data: PlanData) {
     add(d.start_x, d.start_y);
     add(d.end_x, d.end_y);
   }
+  for (const f of data.furniture ?? []) {
+    const r = Math.hypot(f.width, f.height) / 2;
+    add(f.center_x - r, f.center_y - r);
+    add(f.center_x + r, f.center_y + r);
+  }
   if (!isFinite(minX)) return { minX: 0, minY: 0, maxX: 500, maxY: 400 };
   return { minX, minY, maxX, maxY };
 }
@@ -175,4 +180,40 @@ export function clampOpening(t: number, width: number, wall: Wall): number {
   const half = width / 2;
   if (len <= width) return len / 2;
   return Math.max(half, Math.min(len - half, t));
+}
+
+/** SVG transform placing a furniture symbol (local coords, origin top-left) in world space. */
+export function furnitureTransform(f: FurniturePlacement): string {
+  return `translate(${f.center_x} ${f.center_y}) rotate(${f.rotation}) translate(${-f.width / 2} ${-f.height / 2})`;
+}
+
+/** Maps a furniture-local point to world coordinates. */
+export function furnitureToWorld(f: FurniturePlacement, p: Point): Point {
+  const a = (f.rotation * Math.PI) / 180;
+  const x = p.x - f.width / 2;
+  const y = p.y - f.height / 2;
+  return { x: f.center_x + x * Math.cos(a) - y * Math.sin(a), y: f.center_y + x * Math.sin(a) + y * Math.cos(a) };
+}
+
+/** World-space polylines approximating a primitive (for PDF output). */
+export function primitiveWorldPaths(f: FurniturePlacement, s: FurniturePrimitive): { pts: Point[]; closed: boolean } {
+  const T = (x: number, y: number) => furnitureToWorld(f, { x, y });
+  if (s.kind === "line") return { pts: [T(s.x1, s.y1), T(s.x2, s.y2)], closed: false };
+  if (s.kind === "rect")
+    return { pts: [T(s.x, s.y), T(s.x + s.width, s.y), T(s.x + s.width, s.y + s.height), T(s.x, s.y + s.height)], closed: true };
+  const pts: Point[] = [];
+  for (let i = 0; i < 48; i++) {
+    const a = (i / 48) * Math.PI * 2;
+    pts.push(T(s.cx + Math.cos(a) * s.radius, s.cy + Math.sin(a) * s.radius));
+  }
+  return { pts, closed: true };
+}
+
+/** Outline corners of a wall (as a rectangle), offset by `off` from the centreline on each side. */
+export function wallFaces(w: Wall, off = w.thickness / 2): { a: [Point, Point]; b: [Point, Point] } {
+  const n = wallNormal(w);
+  return {
+    a: [{ x: w.start_x + n.x * off, y: w.start_y + n.y * off }, { x: w.end_x + n.x * off, y: w.end_y + n.y * off }],
+    b: [{ x: w.start_x - n.x * off, y: w.start_y - n.y * off }, { x: w.end_x - n.x * off, y: w.end_y - n.y * off }],
+  };
 }

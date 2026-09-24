@@ -3,6 +3,7 @@ import { ChevronLeft, Copy, FileDown, Maximize2, Settings2, Trash2, ZoomIn, Zoom
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { PlanCanvas } from "@/components/plan/PlanCanvas";
+import { FurnitureLibrary } from "@/components/plan/FurnitureLibrary";
 import { PropertiesPanel } from "@/components/plan/PropertiesPanel";
 import { Toolbar, TOOL_KEYS } from "@/components/plan/Toolbar";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -57,6 +58,7 @@ function EditorPage() {
 function Editor() {
   const project = useEditor((s) => s.project)!;
   const setTool = useEditor((s) => s.setTool);
+  const tool = useEditor((s) => s.tool);
   const select = useEditor((s) => s.select);
   const undo = useEditor((s) => s.undo);
   const redo = useEditor((s) => s.redo);
@@ -159,6 +161,7 @@ function Editor() {
         {!isMobile && <Toolbar />}
         <div className="relative min-w-0 flex-1 overflow-hidden">
           <PlanCanvas readOnly={isMobile} onContextMenu={setMenu} viewRef={viewRef} />
+          {!isMobile && tool === "furniture" && <FurnitureLibrary onClose={() => setTool("select")} />}
         </div>
         {!isMobile && <PropertiesPanel />}
       </div>

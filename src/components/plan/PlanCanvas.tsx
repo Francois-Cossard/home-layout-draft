@@ -5,6 +5,8 @@ import {
   doorGeometry,
   formatArea,
   formatLength,
+  furnitureTransform,
+  wallDimensionGeometry,
   gridConfig,
   planBounds,
   pointOnWall,
@@ -17,7 +19,9 @@ import {
   wallSegmentRect,
 } from "@/lib/plan/geometry";
 import { useEditor } from "@/lib/plan/store";
-import type { Dimension, Door, ElementKind, PlanData, Point, Room, Wall, WindowEl } from "@/lib/plan/types";
+import { loadFurnitureLibrary } from "@/lib/plan/storage";
+import { Primitive } from "./FurnitureLibrary";
+import type { Dimension, Door, FurniturePlacement, ElementKind, PlanData, Point, Room, Wall, WindowEl } from "@/lib/plan/types";
 
 interface ViewState {
   zoom: number; // px per cm
@@ -64,6 +68,7 @@ export function PlanCanvas({ readOnly = false, onContextMenu, viewRef }: Props) 
   const [dimStart, setDimStart] = useState<Point | null>(null);
   const [hoverWallId, setHoverWallId] = useState<string | null>(null);
   const [roomDraft, setRoomDraft] = useState<{ a: Point; b: Point } | null>(null);
+  const [wallType, setWallType] = useState<Wall["wall_type"]>("structural");
   const dragRef = useRef<Drag>(null);
   const spaceRef = useRef(false);
 
@@ -224,8 +229,8 @@ export function PlanCanvas({ readOnly = false, onContextMenu, viewRef }: Props) 
             start_y: wallStart.y,
             end_x: p.x,
             end_y: p.y,
-            thickness: 12,
-            wall_type: "interior",
+            thickness: wallType === "structural" ? 20 : 10,
+            wall_type: wallType,
           };
           commit((d) => ({ ...d, walls: [...d.walls, w] }));
           setWallStart(p);
@@ -265,6 +270,27 @@ export function PlanCanvas({ readOnly = false, onContextMenu, viewRef }: Props) 
           commit((d) => ({ ...d, windows: [...d.windows, win] }));
           select({ kind: "window", id: win.id });
         }
+        break;
+      }
+      case "furniture": {
+        const id = window.sessionStorage.getItem("planche.activeFurniture");
+        const def = loadFurnitureLibrary().find((x) => x.id === id);
+        if (!def) break;
+        const item: FurniturePlacement = {
+          id: uid(),
+          project_id: project.id,
+          definition_id: def.id,
+          name: def.name,
+          center_x: p.x,
+          center_y: p.y,
+          rotation: 0,
+          width: def.width,
+          height: def.height,
+          primitives: def.primitives,
+        };
+        commit((d) => ({ ...d, furniture: [...d.furniture, item] }));
+        setTool("select");
+        select({ kind: "furniture", id: item.id });
         break;
       }
       case "dimension": {
@@ -376,6 +402,16 @@ export function PlanCanvas({ readOnly = false, onContextMenu, viewRef }: Props) 
             }),
           }));
           break;
+        case "furniture":
+          setTransient((d) => ({
+            ...d,
+            furniture: d.furniture.map((f) => {
+              if (f.id !== drag.id) return f;
+              const o = snap.furniture.find((x) => x.id === f.id)!;
+              return { ...f, center_x: o.center_x + dx.x, center_y: o.center_y + dx.y };
+            }),
+          }));
+          break;
         case "door":
           setTransient((d) => ({
             ...d,
@@ -461,6 +497,7 @@ export function PlanCanvas({ readOnly = false, onContextMenu, viewRef }: Props) 
         doors: project.doors,
         windows: project.windows,
         dimensions: project.dimensions,
+        furniture: project.furniture,
       },
     };
   };
@@ -512,6 +549,16 @@ export function PlanCanvas({ readOnly = false, onContextMenu, viewRef }: Props) 
     readOnly ? "grab" : tool === "select" ? "default" : tool === "door" || tool === "window" ? "pointer" : "crosshair";
 
   return (
+    <>
+    {tool === "wall" && !readOnly && (
+      <div className="panel absolute top-3 left-1/2 z-20 flex -translate-x-1/2 gap-1 p-1 shadow-float">
+        {(["structural", "drywall"] as const).map((t) => (
+          <button key={t} type="button" onClick={() => setWallType(t)} className={`h-7 rounded px-3 text-xs font-medium capitalize ${wallType === t ? "bg-ink text-paper" : "text-muted-foreground hover:text-foreground"}`}>
+            {t}
+          </button>
+        ))}
+      </div>
+    )}
     <svg
       ref={svgRef}
       className="paper-texture h-full w-full touch-none select-none"
@@ -593,23 +640,8 @@ export function PlanCanvas({ readOnly = false, onContextMenu, viewRef }: Props) 
                 stroke="transparent"
                 strokeLinecap="square"
               />
-              <line
-                x1={w.start_x}
-                y1={w.start_y}
-                x2={w.end_x}
-                y2={w.end_y}
-                className={
-                  sel
-                    ? "stroke-selection"
-                    : hovered
-                      ? "stroke-blueprint"
-                      : w.wall_type === "exterior"
-                        ? "stroke-wall-exterior"
-                        : "stroke-wall"
-                }
-                strokeWidth={w.thickness}
-                strokeLinecap="square"
-              />
+              <WallGraphic wall={w} px={px} tone={sel ? "selection" : hovered ? "blueprint" : "ink"} />
+              <WallLength wall={w} px={px} units={units} selected={sel} />
             </g>
           );
         })}
@@ -662,6 +694,28 @@ export function PlanCanvas({ readOnly = false, onContextMenu, viewRef }: Props) 
           );
         })}
 
+        {/* furniture */}
+        {project.furniture.map((f) => {
+          const sel = isSel("furniture", f.id);
+          return (
+            <g
+              key={f.id}
+              transform={furnitureTransform(f)}
+              onPointerDown={(e) => startMove(e, "furniture", f.id)}
+              onContextMenu={(e) => handleContext(e, "furniture", f.id)}
+              style={{ cursor: tool === "select" && !readOnly ? "move" : undefined }}
+              className={sel ? "[&_*]:stroke-selection" : undefined}
+            >
+              <rect x={0} y={0} width={f.width} height={f.height} className={sel ? "fill-selection-soft" : "fill-transparent"} stroke={sel ? undefined : "none"} strokeDasharray={`${px(3)} ${px(3)}`} vectorEffect="non-scaling-stroke" />
+              <g vectorEffect="non-scaling-stroke">
+                {f.primitives.map((shape) => (
+                  <Primitive key={shape.id} shape={shape} strokeWidth={px(1.5)} />
+                ))}
+              </g>
+            </g>
+          );
+        })}
+
         {/* dimensions */}
         {project.dimensions.map((dim) => (
           <DimensionLine
@@ -696,15 +750,7 @@ export function PlanCanvas({ readOnly = false, onContextMenu, viewRef }: Props) 
                     onPointerDown={(e) => startEndpoint(e, w.id, end)}
                   />
                 ))}
-                <text
-                  x={(w.start_x + w.end_x) / 2}
-                  y={(w.start_y + w.end_y) / 2 - px(14)}
-                  textAnchor="middle"
-                  className="fill-selection font-mono"
-                  fontSize={px(11)}
-                >
-                  {formatLength(wallLength(w), units)}
-                </text>
+
               </g>
             );
           })()}
@@ -712,16 +758,16 @@ export function PlanCanvas({ readOnly = false, onContextMenu, viewRef }: Props) 
         {/* in-progress wall */}
         {wallStart && mouse && (
           <g pointerEvents="none">
-            <line x1={wallStart.x} y1={wallStart.y} x2={mouse.x} y2={mouse.y} className="stroke-blueprint" strokeWidth={12} strokeOpacity={0.6} strokeLinecap="square" />
-            <text
-              x={(wallStart.x + mouse.x) / 2}
-              y={(wallStart.y + mouse.y) / 2 - px(14)}
-              textAnchor="middle"
-              className="fill-blueprint font-mono"
-              fontSize={px(11)}
-            >
-              {formatLength(dist(wallStart, mouse), units)}
-            </text>
+{(() => {
+              const draft: Wall = { id: "draft", project_id: "", start_x: wallStart.x, start_y: wallStart.y, end_x: mouse.x, end_y: mouse.y, thickness: wallType === "structural" ? 20 : 10, wall_type: wallType };
+              if (wallLength(draft) < 1) return null;
+              return (
+                <g opacity={0.7}>
+                  <WallGraphic wall={draft} px={px} tone="blueprint" />
+                  <WallLength wall={draft} px={px} units={units} selected />
+                </g>
+              );
+            })()}
           </g>
         )}
         {dimStart && mouse && <DimensionLine a={dimStart} b={mouse} px={px} units={units} selected preview />}
@@ -746,6 +792,68 @@ export function PlanCanvas({ readOnly = false, onContextMenu, viewRef }: Props) 
         )}
       </g>
     </svg>
+    </>
+  );
+}
+
+function WallGraphic({ wall, px, tone }: { wall: Wall; px: (n: number) => number; tone: "ink" | "selection" | "blueprint" }) {
+  const stroke = tone === "selection" ? "stroke-selection" : tone === "blueprint" ? "stroke-blueprint" : "stroke-wall";
+  const fill = tone === "selection" ? "fill-selection" : tone === "blueprint" ? "fill-blueprint" : "fill-wall";
+  const n = { x: -wallDir(wall).y, y: wallDir(wall).x };
+  const h = wall.thickness / 2;
+  const pts: [Point, Point, Point, Point] = [
+    { x: wall.start_x + n.x * h, y: wall.start_y + n.y * h },
+    { x: wall.end_x + n.x * h, y: wall.end_y + n.y * h },
+    { x: wall.end_x - n.x * h, y: wall.end_y - n.y * h },
+    { x: wall.start_x - n.x * h, y: wall.start_y - n.y * h },
+  ];
+  if (wall.wall_type === "structural") {
+    // Conventional load-bearing wall: solid poché fill
+    return <path d={pointsToPath(pts, true)} className={`${fill} ${stroke}`} strokeWidth={px(1)} />;
+  }
+  // Drywall / partition: two light faces with an open core and closed ends
+  return (
+    <g>
+      <path d={pointsToPath(pts, true)} className="fill-paper" />
+      <path d={pointsToPath([pts[0], pts[1]])} className={stroke} fill="none" strokeWidth={px(1.2)} />
+      <path d={pointsToPath([pts[3], pts[2]])} className={stroke} fill="none" strokeWidth={px(1.2)} />
+      <path d={pointsToPath([pts[0], pts[3]])} className={stroke} fill="none" strokeWidth={px(0.8)} />
+      <path d={pointsToPath([pts[1], pts[2]])} className={stroke} fill="none" strokeWidth={px(0.8)} />
+      <path d={pointsToPath([pts[0], pts[2]])} className={stroke} fill="none" strokeWidth={px(0.5)} strokeOpacity={0.45} />
+    </g>
+  );
+}
+
+/** AutoCAD-style aligned dimension, always offset on the same (left-hand) side of the wall. */
+function WallLength({ wall, px, units, selected }: { wall: Wall; px: (n: number) => number; units: "metric" | "imperial"; selected?: boolean }) {
+  const g = wallDimensionGeometry(wall, wall.thickness / 2 + px(18));
+  const ext = px(4);
+  const n = g.normal;
+  const mid = { x: (g.a.x + g.b.x) / 2, y: (g.a.y + g.b.y) / 2 };
+  const s = { x: wall.start_x + n.x * (wall.thickness / 2 + px(3)), y: wall.start_y + n.y * (wall.thickness / 2 + px(3)) };
+  const e = { x: wall.end_x + n.x * (wall.thickness / 2 + px(3)), y: wall.end_y + n.y * (wall.thickness / 2 + px(3)) };
+  const cls = selected ? "stroke-selection" : "stroke-muted-foreground";
+  const d = wallDir(wall);
+  const tick = px(4);
+  return (
+    <g pointerEvents="none">
+      <line x1={s.x} y1={s.y} x2={g.a.x + n.x * ext} y2={g.a.y + n.y * ext} className={cls} strokeWidth={px(0.7)} />
+      <line x1={e.x} y1={e.y} x2={g.b.x + n.x * ext} y2={g.b.y + n.y * ext} className={cls} strokeWidth={px(0.7)} />
+      <line x1={g.a.x} y1={g.a.y} x2={g.b.x} y2={g.b.y} className={cls} strokeWidth={px(0.8)} />
+      {[g.a, g.b].map((p, i) => (
+        <line key={i} x1={p.x - (d.x - n.x) * tick} y1={p.y - (d.y - n.y) * tick} x2={p.x + (d.x - n.x) * tick} y2={p.y + (d.y - n.y) * tick} className={cls} strokeWidth={px(1.2)} />
+      ))}
+      <text
+        x={mid.x}
+        y={mid.y}
+        transform={`rotate(${g.angle} ${mid.x} ${mid.y}) translate(0 ${-px(4)})`}
+        textAnchor="middle"
+        className={`${selected ? "fill-selection" : "fill-muted-foreground"} font-mono`}
+        fontSize={px(10.5)}
+      >
+        {formatLength(wallLength(wall), units)}
+      </text>
+    </g>
   );
 }
 

@@ -3,6 +3,10 @@ import {
   doorGeometry,
   formatLength,
   planBounds,
+  primitiveWorldPaths,
+  wallDimensionGeometry,
+  wallFaces,
+  wallLength,
   wallDir,
   wallNormal,
   wallSegmentRect,
@@ -96,13 +100,25 @@ export async function exportPlanPdf(project: Project, opts: ExportOptions) {
   doc.setLineDashPattern([], 0);
   doc.setDrawColor(...INK);
 
-  // Walls
-  doc.setLineCap("square");
+  // Walls — structural: solid poché; drywall: two thin faces with light hatch
+  doc.setFillColor(...INK);
   for (const w of project.walls) {
-    doc.setLineWidth(Math.max(0.3, w.thickness * k));
-    doc.line(X(w.start_x), Y(w.start_y), X(w.end_x), Y(w.end_y));
+    if (wallLength(w) < 1) continue;
+    const f = wallFaces(w);
+    const pts = [f.a[0], f.a[1], f.b[1], f.b[0]];
+    if (w.wall_type === "structural") {
+      doc.setLineWidth(0.15);
+      polygon(pts, "FD");
+    } else {
+      doc.setLineWidth(0.25);
+      polyline([f.a[0], f.a[1]]);
+      polyline([f.b[0], f.b[1]]);
+      doc.setLineWidth(0.15);
+      polyline([f.a[0], f.b[0]]);
+      polyline([f.a[1], f.b[1]]);
+      polyline([f.a[0], f.b[1]]);
+    }
   }
-  doc.setLineCap("butt");
 
   // Openings: white cut-out over the wall, then symbol
   doc.setFillColor(255, 255, 255);
@@ -162,6 +178,35 @@ export async function exportPlanPdf(project: Project, opts: ExportOptions) {
     const mid = P({ x: (a.x + e.x) / 2 - nx * 12, y: (a.y + e.y) / 2 - ny * 12 });
     const angle = -(Math.atan2(uy, ux) * 180) / Math.PI;
     doc.text(formatLength(len, project.units), mid[0], mid[1], { align: "center", angle });
+  }
+  // Furniture
+  doc.setDrawColor(...INK);
+  doc.setLineWidth(0.18);
+  for (const f of project.furniture ?? []) {
+    for (const shape of f.primitives) {
+      const { pts, closed } = primitiveWorldPaths(f, shape);
+      if (closed) polygon(pts, "S");
+      else polyline(pts);
+    }
+  }
+
+  // Wall lengths — aligned, offset on one side
+  doc.setDrawColor(90, 90, 100);
+  doc.setTextColor(90, 90, 100);
+  doc.setFontSize(6);
+  doc.setLineWidth(0.12);
+  for (const w of project.walls) {
+    const len = wallLength(w);
+    if (len < 1) continue;
+    const g = wallDimensionGeometry(w, w.thickness / 2 + 3.5 / k);
+    doc.line(...P(g.a), ...P(g.b));
+    const tick = 1.2 / k;
+    for (const p of [g.a, g.b]) {
+      doc.line(...P({ x: p.x - g.normal.x * tick, y: p.y - g.normal.y * tick }), ...P({ x: p.x + g.normal.x * tick, y: p.y + g.normal.y * tick }));
+    }
+    const off = 0.8 / k;
+    const mid = P({ x: (g.a.x + g.b.x) / 2 + g.normal.x * off * (Math.abs(g.angle) === 90 ? 1 : 1), y: (g.a.y + g.b.y) / 2 + g.normal.y * off });
+    doc.text(formatLength(len, project.units), mid[0], mid[1], { align: "center", angle: -g.angle });
   }
   doc.restoreGraphicsState();
 
