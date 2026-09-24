@@ -70,7 +70,7 @@ export function PropertiesPanel() {
           </Field>
           <Field label="Type">
             <div className="grid grid-cols-2 gap-1 rounded-md bg-muted p-1">
-              {(["interior", "exterior"] as WallType[]).map((t) => (
+              {(["structural", "drywall"] as WallType[]).map((t) => (
                 <button
                   key={t}
                   type="button"
@@ -82,7 +82,7 @@ export function PropertiesPanel() {
                       ...data,
                       walls: data.walls.map((x) =>
                         x.id === w.id
-                          ? { ...x, wall_type: t, thickness: t === "exterior" ? Math.max(x.thickness, 25) : Math.min(x.thickness, 15) }
+                          ? { ...x, wall_type: t, thickness: t === "structural" ? Math.max(x.thickness, 20) : Math.min(x.thickness, 12) }
                           : x,
                       ),
                     }))
@@ -224,6 +224,36 @@ export function PropertiesPanel() {
           </div>
           <ReadOnly label="Area" value={formatArea(r.area, units)} />
           <ReadOnly label="Centre" value={`${Math.round(r.center_x)}, ${Math.round(r.center_y)}`} />
+        </>
+      );
+    }
+  } else if (selection?.kind === "furniture") {
+    const f = project.furniture.find((x) => x.id === selection.id);
+    if (f) {
+      title = f.name;
+      body = (
+        <>
+          <Field label="Rotation (°)">
+            <input
+              type="number"
+              className="field font-mono"
+              value={Math.round(f.rotation)}
+              step={15}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                if (Number.isNaN(v)) return;
+                commit((data) => ({ ...data, furniture: data.furniture.map((x) => (x.id === f.id ? { ...x, rotation: ((v % 360) + 360) % 360 } : x)) }));
+              }}
+            />
+          </Field>
+          <div className="grid grid-cols-2 gap-1">
+            {[-90, 90].map((delta) => (
+              <button key={delta} type="button" className="btn-ghost h-8 text-xs" onClick={() => commit((data) => ({ ...data, furniture: data.furniture.map((x) => (x.id === f.id ? { ...x, rotation: (((x.rotation + delta) % 360) + 360) % 360 } : x)) }))}>
+                Rotate {delta > 0 ? "+" : ""}{delta}°
+              </button>
+            ))}
+          </div>
+          <ReadOnly label="Size" value={`${Math.round(f.width)} × ${Math.round(f.height)} cm`} />
         </>
       );
     }
