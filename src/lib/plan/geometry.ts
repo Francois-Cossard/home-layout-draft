@@ -217,3 +217,148 @@ export function wallFaces(w: Wall, off = w.thickness / 2): { a: [Point, Point]; 
     b: [{ x: w.start_x - n.x * off, y: w.start_y - n.y * off }, { x: w.end_x - n.x * off, y: w.end_y - n.y * off }],
   };
 }
+
+// ---------- Wall joins (mitre / T) and interior dimensions ----------
+
+const JOIN_TOL = 1.5; // cm
+
+function lineIntersect(p: Point, d: Point, q: Point, e: Point): Point | null {
+  const den = d.x * e.y - d.y * e.x;
+  if (Math.abs(den) < 1e-6) return null;
+  const t = ((q.x - p.x) * e.y - (q.y - p.y) * e.x) / den;
+  return { x: p.x + d.x * t, y: p.y + d.y * t };
+}
+
+export interface WallOutline {
+  /** [start+left, end+left, end-right, start-right] (left = wallNormal side) */
+  pts: [Point, Point, Point, Point];
+  joined: { start: boolean; end: boolean };
+}
+
+/** Computes the wall's outline with mitred corners at shared endpoints and trimmed T-junctions. */
+export function wallOutline(w: Wall, walls: Wall[]): WallOutline {
+  const d = wallDir(w);
+  const n = wallNormal(w);
+  const h = w.thickness / 2;
+  const S = { x: w.start_x, y: w.start_y };
+  const E = { x: w.end_x, y: w.end_y };
+  const pts: [Point, Point, Point, Point] = [
+    { x: S.x + n.x * h, y: S.y + n.y * h },
+    { x: E.x + n.x * h, y: E.y + n.y * h },
+    { x: E.x - n.x * h, y: E.y - n.y * h },
+    { x: S.x - n.x * h, y: S.y - n.y * h },
+  ];
+  const joined = { start: false, end: false };
+  const len = wallLength(w);
+  if (len < 1) return { pts, joined };
+
+  for (const end of ["start", "end"] as const) {
+    const P = end === "start" ? S : E;
+    const dA = end === "start" ? d : { x: -d.x, y: -d.y }; // pointing away from joint along this wall
+    const nA = { x: -dA.y, y: dA.x };
+    const iL = end === "start" ? 0 : 2; // corner on +nA side
+    const iR = end === "start" ? 3 : 1; // corner on -nA side
+    // 1) corner joint with another wall sharing this endpoint
+    const other = walls.find((o) => {
+      if (o.id === w.id || wallLength(o) < 1) return false;
+      return dist(P, { x: o.start_x, y: o.start_y }) < JOIN_TOL || dist(P, { x: o.end_x, y: o.end_y }) < JOIN_TOL;
+    });
+    if (other) {
+      const od = wallDir(other);
+      const atStart = dist(P, { x: other.start_x, y: other.start_y }) < JOIN_TOL;
+      const dB = atStart ? od : { x: -od.x, y: -od.y };
+      const nB = { x: -dB.y, y: dB.x };
+      const hB = other.thickness / 2;
+      const cross = dA.x * dB.y - dA.y * dB.x;
+      if (Math.abs(cross) > 0.05) {
+        const L = lineIntersect({ x: P.x + nA.x * h, y: P.y + nA.y * h }, dA, { x: P.x - nB.x * hB, y: P.y - nB.y * hB }, dB);
+        const R = lineIntersect({ x: P.x - nA.x * h, y: P.y - nA.y * h }, dA, { x: P.x + nB.x * hB, y: P.y + nB.y * hB }, dB);
+        const lim = (h + hB) * 4;
+        if (L && R && dist(L, P) < lim && dist(R, P) < lim) {
+          pts[iL] = L;
+          pts[iR] = R;
+          joined[end] = true;
+        }
+      } else joined[end] = true; // collinear continuation
+      continue;
+    }
+    // 2) T-junction: endpoint lies on another wall's body
+    const host = walls.find((o) => {
+      if (o.id === w.id || wallLength(o) < 1) return false;
+      const pr = projectToWall(P, o);
+      return pr.distance <= o.thickness / 2 + JOIN_TOL && pr.t > 1 && pr.t < wallLength(o) - 1;
+    });
+    if (host) {
+      const hd = wallDir(host);
+      const hn = wallNormal(host);
+      // face of host on the side where this wall comes from
+      const probe = { x: P.x + dA.x * 10, y: P.y + dA.y * 10 };
+      const side = (probe.x - host.start_x) * hn.x + (probe.y - host.start_y) * hn.y >= 0 ? 1 : -1;
+      const fp = { x: host.start_x + hn.x * side * (host.thickness / 2), y: host.start_y + hn.y * side * (host.thickness / 2) };
+      const L = lineIntersect({ x: P.x + nA.x * h, y: P.y + nA.y * h }, dA, fp, hd);
+      const R = lineIntersect({ x: P.x - nA.x * h, y: P.y - nA.y * h }, dA, fp, hd);
+      if (L && R) {
+        pts[iL] = L;
+        pts[iR] = R;
+        joined[end] = true;
+      }
+    }
+  }
+  return { pts, joined };
+}
+
+/** Centroid of all wall endpoints — used to decide which face is "inside". */
+export function planCentroid(walls: Wall[]): Point {
+  if (!walls.length) return { x: 0, y: 0 };
+  let x = 0;
+  let y = 0;
+  for (const w of walls) {
+    x += w.start_x + w.end_x;
+    y += w.start_y + w.end_y;
+  }
+  return { x: x / (walls.length * 2), y: y / (walls.length * 2) };
+}
+
+export type DimMode = "interior" | "axis";
+
+/**
+ * Wall dimension geometry. "interior" measures the clear face length between
+ * adjoining walls, on the side facing the plan interior; "axis" measures the centreline.
+ */
+export function wallDimension(w: Wall, walls: Wall[], mode: DimMode, offset: number) {
+  const n = wallNormal(w);
+  if (mode === "axis") {
+    const g = wallDimensionGeometry(w, w.thickness / 2 + offset);
+    const s = { x: w.start_x + n.x * (w.thickness / 2), y: w.start_y + n.y * (w.thickness / 2) };
+    const e = { x: w.end_x + n.x * (w.thickness / 2), y: w.end_y + n.y * (w.thickness / 2) };
+    return { ...g, s, e, len: wallLength(w) };
+  }
+  const { pts } = wallOutline(w, walls);
+  const c = planCentroid(walls);
+  const mid = { x: (w.start_x + w.end_x) / 2, y: (w.start_y + w.end_y) / 2 };
+  const sign = (c.x - mid.x) * n.x + (c.y - mid.y) * n.y >= 0 ? 1 : -1;
+  const s = sign > 0 ? pts[0] : pts[3];
+  const e = sign > 0 ? pts[1] : pts[2];
+  const nn = { x: n.x * sign, y: n.y * sign };
+  const a = { x: s.x + nn.x * offset, y: s.y + nn.y * offset };
+  const b = { x: e.x + nn.x * offset, y: e.y + nn.y * offset };
+  return { a, b, s, e, normal: nn, angle: readableAngleDegrees(a, b), len: dist(s, e) };
+}
+
+/** Snaps a point to the nearest wall face (for measuring clear distances wall-to-wall). */
+export function snapToWallFace(p: Point, walls: Wall[], tol: number): Point | null {
+  let best: { q: Point; d: number } | null = null;
+  for (const w of walls) {
+    const len = wallLength(w);
+    if (len < 1) continue;
+    const pr = projectToWall(p, w);
+    if (pr.distance > w.thickness / 2 + tol) continue;
+    const n = wallNormal(w);
+    const c = pointOnWall(w, pr.t);
+    const side = (p.x - c.x) * n.x + (p.y - c.y) * n.y >= 0 ? 1 : -1;
+    const q = { x: c.x + n.x * side * (w.thickness / 2), y: c.y + n.y * side * (w.thickness / 2) };
+    const d = dist(p, q);
+    if (d <= tol && (!best || d < best.d)) best = { q, d };
+  }
+  return best?.q ?? null;
+}
