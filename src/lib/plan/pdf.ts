@@ -6,6 +6,8 @@ import {
   primitiveWorldPaths,
   wallDimensionGeometry,
   wallFaces,
+  wallOutline,
+  wallDimension,
   wallLength,
   wallDir,
   wallNormal,
@@ -104,19 +106,17 @@ export async function exportPlanPdf(project: Project, opts: ExportOptions) {
   doc.setFillColor(...INK);
   for (const w of project.walls) {
     if (wallLength(w) < 1) continue;
-    const f = wallFaces(w);
-    const pts = [f.a[0], f.a[1], f.b[1], f.b[0]];
+    const { pts, joined } = wallOutline(w, project.walls);
     if (w.wall_type === "structural") {
-      doc.setLineWidth(0.15);
+      doc.setLineWidth(0.12);
       polygon(pts, "FD");
     } else {
       doc.setLineWidth(0.25);
-      polyline([f.a[0], f.a[1]]);
-      polyline([f.b[0], f.b[1]]);
-      doc.setLineWidth(0.15);
-      polyline([f.a[0], f.b[0]]);
-      polyline([f.a[1], f.b[1]]);
-      polyline([f.a[0], f.b[1]]);
+      polyline([pts[0], pts[1]]);
+      polyline([pts[3], pts[2]]);
+      doc.setLineWidth(0.18);
+      if (!joined.start) polyline([pts[0], pts[3]]);
+      if (!joined.end) polyline([pts[1], pts[2]]);
     }
   }
 
@@ -196,9 +196,10 @@ export async function exportPlanPdf(project: Project, opts: ExportOptions) {
   doc.setFontSize(6);
   doc.setLineWidth(0.12);
   for (const w of project.walls) {
-    const len = wallLength(w);
+    if (wallLength(w) < 1) continue;
+    const g = wallDimension(w, project.walls, "interior", 3.5 / k);
+    const len = g.len;
     if (len < 1) continue;
-    const g = wallDimensionGeometry(w, w.thickness / 2 + 3.5 / k);
     doc.line(...P(g.a), ...P(g.b));
     const tick = 1.2 / k;
     for (const p of [g.a, g.b]) {

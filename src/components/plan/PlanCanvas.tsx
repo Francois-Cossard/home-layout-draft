@@ -17,6 +17,10 @@ import {
   wallDir,
   wallLength,
   wallSegmentRect,
+  wallOutline,
+  wallDimension,
+  snapToWallFace,
+  type DimMode,
 } from "@/lib/plan/geometry";
 import { useEditor } from "@/lib/plan/store";
 import { loadFurnitureLibrary } from "@/lib/plan/storage";
@@ -69,6 +73,7 @@ export function PlanCanvas({ readOnly = false, onContextMenu, viewRef }: Props) 
   const [hoverWallId, setHoverWallId] = useState<string | null>(null);
   const [roomDraft, setRoomDraft] = useState<{ a: Point; b: Point } | null>(null);
   const [wallType, setWallType] = useState<Wall["wall_type"]>("structural");
+  const [dimMode, setDimMode] = useState<DimMode>("interior");
   const dragRef = useRef<Drag>(null);
   const spaceRef = useRef(false);
 
@@ -171,6 +176,10 @@ export function PlanCanvas({ readOnly = false, onContextMenu, viewRef }: Props) 
     (p: Point): Point => {
       if (!project) return p;
       const tol = HIT_PX / view.zoom;
+      if (tool === "dimension") {
+        const f = snapToWallFace(p, project.walls, tol);
+        if (f) return f;
+      }
       for (const w of project.walls) {
         const s = { x: w.start_x, y: w.start_y };
         const e = { x: w.end_x, y: w.end_y };
@@ -179,7 +188,7 @@ export function PlanCanvas({ readOnly = false, onContextMenu, viewRef }: Props) 
       }
       return snapPoint(p, grid.snap);
     },
-    [project, view.zoom, grid.snap],
+    [project, view.zoom, grid.snap, tool],
   );
 
   const nearestWall = useCallback(
@@ -550,13 +559,22 @@ export function PlanCanvas({ readOnly = false, onContextMenu, viewRef }: Props) 
 
   return (
     <>
-    {tool === "wall" && !readOnly && (
-      <div className="panel absolute top-3 left-1/2 z-20 flex -translate-x-1/2 gap-1 p-1 shadow-float">
-        {(["structural", "drywall"] as const).map((t) => (
-          <button key={t} type="button" onClick={() => setWallType(t)} className={`h-7 rounded px-3 text-xs font-medium capitalize ${wallType === t ? "bg-ink text-paper" : "text-muted-foreground hover:text-foreground"}`}>
-            {t}
+    {(tool === "wall" || tool === "dimension") && !readOnly && (
+      <div className="panel absolute top-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 p-1 shadow-float">
+        {tool === "wall" &&
+          (["structural", "drywall"] as const).map((t) => (
+            <button key={t} type="button" onClick={() => setWallType(t)} className={`h-7 rounded px-3 text-xs font-medium capitalize ${wallType === t ? "bg-ink text-paper" : "text-muted-foreground hover:text-foreground"}`}>
+              {t}
+            </button>
+          ))}
+        {tool === "wall" && <span className="mx-1 h-5 w-px bg-border" />}
+        <span className="label-caps px-1">Cotes</span>
+        {([["interior", "Intérieur"], ["axis", "Axe"]] as const).map(([m, label]) => (
+          <button key={m} type="button" onClick={() => setDimMode(m)} className={`h-7 rounded px-3 text-xs font-medium ${dimMode === m ? "bg-ink text-paper" : "text-muted-foreground hover:text-foreground"}`}>
+            {label}
           </button>
         ))}
+        {tool === "dimension" && <span className="px-2 text-xs text-muted-foreground">Cliquez sur une face de mur puis sur l'autre</span>}
       </div>
     )}
     <svg
@@ -640,8 +658,8 @@ export function PlanCanvas({ readOnly = false, onContextMenu, viewRef }: Props) 
                 stroke="transparent"
                 strokeLinecap="square"
               />
-              <WallGraphic wall={w} px={px} tone={sel ? "selection" : hovered ? "blueprint" : "ink"} />
-              <WallLength wall={w} px={px} units={units} selected={sel} />
+              <WallGraphic wall={w} walls={project.walls} px={px} tone={sel ? "selection" : hovered ? "blueprint" : "ink"} />
+              <WallLength wall={w} walls={project.walls} mode={dimMode} px={px} units={units} selected={sel} />
             </g>
           );
         })}
@@ -763,8 +781,8 @@ export function PlanCanvas({ readOnly = false, onContextMenu, viewRef }: Props) 
               if (wallLength(draft) < 1) return null;
               return (
                 <g opacity={0.7}>
-                  <WallGraphic wall={draft} px={px} tone="blueprint" />
-                  <WallLength wall={draft} px={px} units={units} selected />
+                  <WallGraphic wall={draft} walls={[...project.walls, draft]} px={px} tone="blueprint" />
+                  <WallLength wall={draft} walls={[...project.walls, draft]} mode={dimMode} px={px} units={units} selected />
                 </g>
               );
             })()}
@@ -796,45 +814,45 @@ export function PlanCanvas({ readOnly = false, onContextMenu, viewRef }: Props) 
   );
 }
 
-function WallGraphic({ wall, px, tone }: { wall: Wall; px: (n: number) => number; tone: "ink" | "selection" | "blueprint" }) {
+function WallGraphic({ wall, walls, px, tone }: { wall: Wall; walls: Wall[]; px: (n: number) => number; tone: "ink" | "selection" | "blueprint" }) {
   const stroke = tone === "selection" ? "stroke-selection" : tone === "blueprint" ? "stroke-blueprint" : "stroke-wall";
   const fill = tone === "selection" ? "fill-selection" : tone === "blueprint" ? "fill-blueprint" : "fill-wall";
-  const n = { x: -wallDir(wall).y, y: wallDir(wall).x };
-  const h = wall.thickness / 2;
-  const pts: [Point, Point, Point, Point] = [
-    { x: wall.start_x + n.x * h, y: wall.start_y + n.y * h },
-    { x: wall.end_x + n.x * h, y: wall.end_y + n.y * h },
-    { x: wall.end_x - n.x * h, y: wall.end_y - n.y * h },
-    { x: wall.start_x - n.x * h, y: wall.start_y - n.y * h },
-  ];
+  const { pts, joined } = wallOutline(wall, walls);
   if (wall.wall_type === "structural") {
-    // Conventional load-bearing wall: solid poché fill
-    return <path d={pointsToPath(pts, true)} className={`${fill} ${stroke}`} strokeWidth={px(1)} />;
+    // Conventional load-bearing wall: solid poché fill, mitred corners
+    return <path d={pointsToPath(pts, true)} className={`${fill} ${stroke}`} strokeWidth={px(0.6)} strokeLinejoin="miter" />;
   }
-  // Drywall / partition: two light faces with an open core and closed ends
+  // Drywall / partition: two faces, open core, end caps only on free ends
   return (
     <g>
       <path d={pointsToPath(pts, true)} className="fill-paper" />
       <path d={pointsToPath([pts[0], pts[1]])} className={stroke} fill="none" strokeWidth={px(1.2)} />
       <path d={pointsToPath([pts[3], pts[2]])} className={stroke} fill="none" strokeWidth={px(1.2)} />
-      <path d={pointsToPath([pts[0], pts[3]])} className={stroke} fill="none" strokeWidth={px(0.8)} />
-      <path d={pointsToPath([pts[1], pts[2]])} className={stroke} fill="none" strokeWidth={px(0.8)} />
-      <path d={pointsToPath([pts[0], pts[2]])} className={stroke} fill="none" strokeWidth={px(0.5)} strokeOpacity={0.45} />
+      {!joined.start && <path d={pointsToPath([pts[0], pts[3]])} className={stroke} fill="none" strokeWidth={px(1)} />}
+      {!joined.end && <path d={pointsToPath([pts[1], pts[2]])} className={stroke} fill="none" strokeWidth={px(1)} />}
     </g>
   );
 }
 
-/** AutoCAD-style aligned dimension, always offset on the same (left-hand) side of the wall. */
-function WallLength({ wall, px, units, selected }: { wall: Wall; px: (n: number) => number; units: "metric" | "imperial"; selected?: boolean }) {
-  const g = wallDimensionGeometry(wall, wall.thickness / 2 + px(18));
+/** AutoCAD-style aligned dimension. Interior mode measures clear face-to-face length inside the room. */
+function WallLength({ wall, walls, mode, px, units, selected }: { wall: Wall; walls: Wall[]; mode: DimMode; px: (n: number) => number; units: "metric" | "imperial"; selected?: boolean }) {
+  const g = wallDimension(wall, walls, mode, px(16));
+  if (g.len < 1) return null;
   const ext = px(4);
   const n = g.normal;
   const mid = { x: (g.a.x + g.b.x) / 2, y: (g.a.y + g.b.y) / 2 };
-  const s = { x: wall.start_x + n.x * (wall.thickness / 2 + px(3)), y: wall.start_y + n.y * (wall.thickness / 2 + px(3)) };
-  const e = { x: wall.end_x + n.x * (wall.thickness / 2 + px(3)), y: wall.end_y + n.y * (wall.thickness / 2 + px(3)) };
+  const s = { x: g.s.x + n.x * px(3), y: g.s.y + n.y * px(3) };
+  const e = { x: g.e.x + n.x * px(3), y: g.e.y + n.y * px(3) };
   const cls = selected ? "stroke-selection" : "stroke-muted-foreground";
-  const d = wallDir(wall);
+  const dx = g.b.x - g.a.x;
+  const dy = g.b.y - g.a.y;
+  const l = Math.hypot(dx, dy) || 1;
+  const d = { x: dx / l, y: dy / l };
   const tick = px(4);
+  // text sits on the side of the dimension line away from the wall
+  const th = (g.angle * Math.PI) / 180;
+  const up = -Math.sin(th) * n.x + Math.cos(th) * n.y;
+  const ty = up >= 0 ? px(11) : -px(4);
   return (
     <g pointerEvents="none">
       <line x1={s.x} y1={s.y} x2={g.a.x + n.x * ext} y2={g.a.y + n.y * ext} className={cls} strokeWidth={px(0.7)} />
@@ -846,12 +864,12 @@ function WallLength({ wall, px, units, selected }: { wall: Wall; px: (n: number)
       <text
         x={mid.x}
         y={mid.y}
-        transform={`rotate(${g.angle} ${mid.x} ${mid.y}) translate(0 ${-px(4)})`}
+        transform={`rotate(${g.angle} ${mid.x} ${mid.y}) translate(0 ${ty})`}
         textAnchor="middle"
         className={`${selected ? "fill-selection" : "fill-muted-foreground"} font-mono`}
         fontSize={px(10.5)}
       >
-        {formatLength(wallLength(wall), units)}
+        {formatLength(g.len, units)}
       </text>
     </g>
   );
