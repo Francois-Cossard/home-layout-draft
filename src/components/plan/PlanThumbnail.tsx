@@ -1,4 +1,4 @@
-import { doorGeometry, furnitureTransform, planBounds, pointsToPath, wallFaces } from "@/lib/plan/geometry";
+import { doorGeometry, furnitureTransform, planBounds, pointsToPath, wallFaces, wallOutline } from "@/lib/plan/geometry";
 import { Primitive } from "./FurnitureLibrary";
 import type { PlanData } from "@/lib/plan/types";
 
@@ -24,8 +24,7 @@ export function PlanThumbnail({ data, className }: { data: PlanData; className?:
         />
       ))}
       {data.walls.map((wall) => {
-        const f = wallFaces(wall);
-        const d = pointsToPath([f.a[0], f.a[1], f.b[1], f.b[0]], true);
+        const d = pointsToPath(wallOutline(wall, data.walls).pts, true);
         return wall.wall_type === "structural" ? (
           <path key={wall.id} d={d} className="fill-wall stroke-wall" strokeWidth={k * 0.5} />
         ) : (

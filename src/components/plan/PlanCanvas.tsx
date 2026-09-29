@@ -850,7 +850,8 @@ function WallLength({ wall, walls, mode, px, units, selected }: { wall: Wall; wa
   const d = { x: dx / l, y: dy / l };
   const tick = px(4);
   // text sits on the side of the dimension line away from the wall
-  const up = Math.sin(((g.angle - 90) * Math.PI) / 180) * n.y + Math.cos(((g.angle - 90) * Math.PI) / 180) * n.x;
+  const th = (g.angle * Math.PI) / 180;
+  const up = -Math.sin(th) * n.x + Math.cos(th) * n.y;
   const ty = up >= 0 ? px(11) : -px(4);
   return (
     <g pointerEvents="none">
