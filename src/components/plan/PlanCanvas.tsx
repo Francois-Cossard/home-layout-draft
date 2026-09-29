@@ -171,6 +171,10 @@ export function PlanCanvas({ readOnly = false, onContextMenu, viewRef }: Props) 
     (p: Point): Point => {
       if (!project) return p;
       const tol = HIT_PX / view.zoom;
+      if (tool === "dimension") {
+        const f = snapToWallFace(p, project.walls, tol);
+        if (f) return f;
+      }
       for (const w of project.walls) {
         const s = { x: w.start_x, y: w.start_y };
         const e = { x: w.end_x, y: w.end_y };
@@ -179,7 +183,7 @@ export function PlanCanvas({ readOnly = false, onContextMenu, viewRef }: Props) 
       }
       return snapPoint(p, grid.snap);
     },
-    [project, view.zoom, grid.snap],
+    [project, view.zoom, grid.snap, tool],
   );
 
   const nearestWall = useCallback(
