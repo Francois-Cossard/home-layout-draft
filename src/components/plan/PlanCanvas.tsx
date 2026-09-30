@@ -595,6 +595,7 @@ export function PlanCanvas({ readOnly = false, onContextMenu, viewRef }: Props) 
       className="paper-texture h-full w-full touch-none select-none"
       style={{ cursor }}
       onPointerDown={onPointerDown}
+      onDoubleClick={() => tool === "room" && roomDraft && roomDraft.length >= 3 && finishRoom(roomDraft)}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerLeave={() => setMouse(null)}
