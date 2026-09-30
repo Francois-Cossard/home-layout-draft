@@ -24,6 +24,8 @@ export interface Room {
   center_y: number;
   width: number; // cm — used to draw the room outline
   height: number; // cm
+  /** Polygon outline (world cm), traced along wall faces. */
+  points?: Point[] | undefined;
 }
 
 export interface Door {

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { uid, wallDir } from "./geometry";
+import { translateRoom, uid, wallDir } from "./geometry";
 import { upsertProject } from "./storage";
 import type { PlanData, Project, Selection, Tool } from "./types";
 
@@ -161,7 +161,7 @@ export const useEditor = create<EditorState>((set, get) => ({
         case "room": {
           const r = d.rooms.find((x) => x.id === id);
           if (!r) return d;
-          const copy = { ...r, id: uid(), center_x: r.center_x + off, center_y: r.center_y + off };
+          const copy = { ...translateRoom(r, off, off), id: uid() };
           newSel = { kind, id: copy.id };
           return { ...d, rooms: [...d.rooms, copy] };
         }

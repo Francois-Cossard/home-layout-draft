@@ -1,4 +1,4 @@
-import { uid } from "./geometry";
+import { insetRectRoomToWalls, uid } from "./geometry";
 import type { Door, FurnitureDefinition, PlanData, Project, Room, Wall, WindowEl } from "./types";
 
 const KEY = "planche.projects.v1";
@@ -16,6 +16,7 @@ function migrateProject(project: Project): Project {
       ...wall,
       wall_type: ((wall.wall_type as string) === "exterior" ? "structural" : (wall.wall_type as string) === "interior" ? "drywall" : wall.wall_type),
     })),
+    rooms: (project.rooms ?? []).map((r) => insetRectRoomToWalls(r, project.walls ?? [])),
     furniture: project.furniture ?? [],
   };
 }
@@ -24,7 +25,7 @@ export function loadProjects(): Project[] {
   if (typeof window === "undefined") return [];
   const raw = window.localStorage.getItem(KEY);
   if (!raw) {
-    const demos = demoProjects();
+    const demos = demoProjects().map(migrateProject);
     saveProjects(demos);
     return demos;
   }

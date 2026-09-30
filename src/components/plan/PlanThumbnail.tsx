@@ -1,4 +1,4 @@
-import { doorGeometry, furnitureTransform, planBounds, pointsToPath, wallFaces, wallOutline } from "@/lib/plan/geometry";
+import { roomPolygon, doorGeometry, furnitureTransform, planBounds, pointsToPath, wallFaces, wallOutline } from "@/lib/plan/geometry";
 import { Primitive } from "./FurnitureLibrary";
 import type { PlanData } from "@/lib/plan/types";
 
@@ -12,12 +12,9 @@ export function PlanThumbnail({ data, className }: { data: PlanData; className?:
   return (
     <svg viewBox={`${b.minX - pad} ${b.minY - pad} ${w} ${h}`} className={className} preserveAspectRatio="xMidYMid meet">
       {data.rooms.map((r) => (
-        <rect
+        <path
           key={r.id}
-          x={r.center_x - r.width / 2}
-          y={r.center_y - r.height / 2}
-          width={r.width}
-          height={r.height}
+          d={pointsToPath(roomPolygon(r), true)}
           className="fill-room-fill stroke-blueprint/40"
           strokeWidth={k}
           strokeDasharray={`${k * 4} ${k * 3}`}
