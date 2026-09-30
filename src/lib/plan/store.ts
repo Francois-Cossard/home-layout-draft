@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { uid, wallDir } from "./geometry";
+import { translateRoom, uid, wallDir } from "./geometry";
 import { upsertProject } from "./storage";
 import type { PlanData, Project, Selection, Tool } from "./types";
 

@@ -1,5 +1,5 @@
 import { Copy, Trash2 } from "lucide-react";
-import { formatArea, formatLength, wallDir, wallLength } from "@/lib/plan/geometry";
+import { polygonPerimeter, roomPolygon, formatArea, formatLength, wallDir, wallLength } from "@/lib/plan/geometry";
 import { useEditor } from "@/lib/plan/store";
 import type { SwingDirection, WallType } from "@/lib/plan/types";
 
@@ -196,13 +196,6 @@ export function PropertiesPanel() {
     const r = project.rooms.find((x) => x.id === selection.id);
     if (r) {
       title = "Room";
-      const setSize = (width: number, height: number) =>
-        commit((data) => ({
-          ...data,
-          rooms: data.rooms.map((x) =>
-            x.id === r.id ? { ...x, width, height, area: Math.round(width * height) / 10000 } : x,
-          ),
-        }));
       body = (
         <>
           <Field label="Name">
@@ -214,16 +207,9 @@ export function PropertiesPanel() {
               }
             />
           </Field>
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Width (cm)">
-              <input type="number" className="field font-mono" value={Math.round(r.width)} onChange={(e) => setSize(Number(e.target.value) || r.width, r.height)} />
-            </Field>
-            <Field label="Depth (cm)">
-              <input type="number" className="field font-mono" value={Math.round(r.height)} onChange={(e) => setSize(r.width, Number(e.target.value) || r.height)} />
-            </Field>
-          </div>
           <ReadOnly label="Area" value={formatArea(r.area, units)} />
-          <ReadOnly label="Centre" value={`${Math.round(r.center_x)}, ${Math.round(r.center_y)}`} />
+          <ReadOnly label="Perimeter" value={formatLength(polygonPerimeter(roomPolygon(r)), units)} />
+          <ReadOnly label="Corners" value={String(roomPolygon(r).length)} />
         </>
       );
     }
@@ -306,7 +292,7 @@ function Hints({ tool }: { tool: string }) {
   const hint: Record<string, string> = {
     select: "Click an element to select it. Drag to move, drag wall endpoints to resize. Drag empty space or hold Space to pan, scroll to zoom.",
     wall: "Click to start a wall, click again to finish. Walls chain — press Esc to stop. Endpoints snap to the grid and existing corners.",
-    room: "Drag a rectangle to define a room. The area is computed automatically; rename it in this panel.",
+    room: "Click corner by corner along the inner wall faces; click the first point (or press Enter / double-click) to close. Backspace removes the last point.",
     door: "Hover a wall and click to place a door. Adjust width and swing here afterwards.",
     window: "Hover a wall and click to embed a window.",
     dimension: "Click two points to measure between them.",

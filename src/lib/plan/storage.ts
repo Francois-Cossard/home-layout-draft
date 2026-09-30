@@ -25,7 +25,7 @@ export function loadProjects(): Project[] {
   if (typeof window === "undefined") return [];
   const raw = window.localStorage.getItem(KEY);
   if (!raw) {
-    const demos = demoProjects();
+    const demos = demoProjects().map(migrateProject);
     saveProjects(demos);
     return demos;
   }

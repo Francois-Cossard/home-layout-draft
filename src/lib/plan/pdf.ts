@@ -12,6 +12,7 @@ import {
   wallDir,
   wallNormal,
   wallSegmentRect,
+  roomPolygon,
 } from "./geometry";
 import type { PaperSize, Point, Project, ScaleOption } from "./types";
 
@@ -97,7 +98,7 @@ export async function exportPlanPdf(project: Project, opts: ExportOptions) {
   doc.setDrawColor(...BLUE);
   doc.setLineDashPattern([1.2, 1], 0);
   for (const r of project.rooms) {
-    doc.rect(X(r.center_x - r.width / 2), Y(r.center_y - r.height / 2), r.width * k, r.height * k, "S");
+    polygon(roomPolygon(r), "S");
   }
   doc.setLineDashPattern([], 0);
   doc.setDrawColor(...INK);

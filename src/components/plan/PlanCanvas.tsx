@@ -18,6 +18,10 @@ import {
   wallLength,
   wallSegmentRect,
   wallOutline,
+  roomFromPolygon,
+  roomPolygon,
+  snapToWallCorner,
+  translateRoom,
   wallDimension,
   snapToWallFace,
   type DimMode,
@@ -71,7 +75,7 @@ export function PlanCanvas({ readOnly = false, onContextMenu, viewRef }: Props) 
   const [wallStart, setWallStart] = useState<Point | null>(null);
   const [dimStart, setDimStart] = useState<Point | null>(null);
   const [hoverWallId, setHoverWallId] = useState<string | null>(null);
-  const [roomDraft, setRoomDraft] = useState<{ a: Point; b: Point } | null>(null);
+  const [roomDraft, setRoomDraft] = useState<Point[] | null>(null);
   const [wallType, setWallType] = useState<Wall["wall_type"]>("structural");
   const [dimMode, setDimMode] = useState<DimMode>("interior");
   const dragRef = useRef<Drag>(null);
@@ -176,7 +180,11 @@ export function PlanCanvas({ readOnly = false, onContextMenu, viewRef }: Props) 
     (p: Point): Point => {
       if (!project) return p;
       const tol = HIT_PX / view.zoom;
-      if (tool === "dimension") {
+      if (tool === "room") {
+        const c = snapToWallCorner(p, project.walls, tol);
+        if (c) return c;
+      }
+      if (tool === "dimension" || tool === "room") {
         const f = snapToWallFace(p, project.walls, tol);
         if (f) return f;
       }
@@ -247,8 +255,12 @@ export function PlanCanvas({ readOnly = false, onContextMenu, viewRef }: Props) 
         break;
       }
       case "room": {
-        dragRef.current = { kind: "room-draw", start: p };
-        setRoomDraft({ a: p, b: p });
+        const pts = roomDraft ?? [];
+        if (pts.length >= 3 && dist(pts[0]!, p) < HIT_PX / view.zoom + 1) {
+          finishRoom(pts);
+        } else if (!pts.length || dist(pts[pts.length - 1]!, p) >= 1) {
+          setRoomDraft([...pts, p]);
+        }
         break;
       }
       case "door":
@@ -346,10 +358,6 @@ export function PlanCanvas({ readOnly = false, onContextMenu, viewRef }: Props) 
 
     if (!drag) return;
 
-    if (drag.kind === "room-draw") {
-      setRoomDraft({ a: drag.start, b: snapped });
-      return;
-    }
 
     if (drag.kind === "endpoint") {
       setTransient((d) => ({
@@ -391,7 +399,7 @@ export function PlanCanvas({ readOnly = false, onContextMenu, viewRef }: Props) 
             rooms: d.rooms.map((r) => {
               if (r.id !== drag.id) return r;
               const o = snap.rooms.find((x) => x.id === r.id)!;
-              return { ...r, center_x: o.center_x + dx.x, center_y: o.center_y + dx.y };
+              return translateRoom(o, dx.x, dx.y);
             }),
           }));
           break;
@@ -453,28 +461,6 @@ export function PlanCanvas({ readOnly = false, onContextMenu, viewRef }: Props) 
     const drag = dragRef.current;
     dragRef.current = null;
     if (!drag || !project) return;
-    if (drag.kind === "room-draw") {
-      const draft = roomDraft;
-      setRoomDraft(null);
-      if (!draft) return;
-      const width = Math.abs(draft.b.x - draft.a.x);
-      const height = Math.abs(draft.b.y - draft.a.y);
-      if (width < 30 || height < 30) return;
-      const room: Room = {
-        id: uid(),
-        project_id: project.id,
-        name: `Room ${project.rooms.length + 1}`,
-        area: Math.round((width * height) / 100) / 100,
-        center_x: (draft.a.x + draft.b.x) / 2,
-        center_y: (draft.a.y + draft.b.y) / 2,
-        width,
-        height,
-      };
-      commit((d) => ({ ...d, rooms: [...d.rooms, room] }));
-      select({ kind: "room", id: room.id });
-      setTool("select");
-      return;
-    }
     if (drag.kind === "move" || drag.kind === "endpoint") {
       // Drop zero-length walls
       setTransient((d) => ({ ...d, walls: d.walls.filter((w) => wallLength(w) >= 1) }));
@@ -607,11 +593,8 @@ export function PlanCanvas({ readOnly = false, onContextMenu, viewRef }: Props) 
               onContextMenu={(e) => handleContext(e, "room", r.id)}
               style={{ cursor: tool === "select" && !readOnly ? "move" : undefined }}
             >
-              <rect
-                x={r.center_x - r.width / 2}
-                y={r.center_y - r.height / 2}
-                width={r.width}
-                height={r.height}
+              <path
+                d={pointsToPath(roomPolygon(r), true)}
                 className={sel ? "fill-selection-soft stroke-selection" : "fill-room-fill stroke-blueprint/50"}
                 strokeDasharray={`${px(4)} ${px(4)}`}
                 vectorEffect="non-scaling-stroke"
@@ -789,17 +772,38 @@ export function PlanCanvas({ readOnly = false, onContextMenu, viewRef }: Props) 
           </g>
         )}
         {dimStart && mouse && <DimensionLine a={dimStart} b={mouse} px={px} units={units} selected preview />}
-        {roomDraft && (
-          <rect
-            pointerEvents="none"
-            x={Math.min(roomDraft.a.x, roomDraft.b.x)}
-            y={Math.min(roomDraft.a.y, roomDraft.b.y)}
-            width={Math.abs(roomDraft.b.x - roomDraft.a.x)}
-            height={Math.abs(roomDraft.b.y - roomDraft.a.y)}
-            className="fill-blueprint-soft stroke-blueprint"
-            strokeDasharray={`${px(4)} ${px(4)}`}
-            vectorEffect="non-scaling-stroke"
-          />
+        {roomDraft && roomDraft.length > 0 && (
+          <g pointerEvents="none">
+            <path
+              d={pointsToPath(mouse ? [...roomDraft, mouse] : roomDraft, true)}
+              className="fill-blueprint-soft stroke-none"
+            />
+            <path
+              d={pointsToPath(mouse ? [...roomDraft, mouse] : roomDraft)}
+              className="fill-none stroke-blueprint"
+              strokeWidth={px(1.5)}
+            />
+            {mouse && (
+              <text
+                x={mouse.x + px(10)}
+                y={mouse.y - px(10)}
+                className="fill-blueprint font-mono"
+                fontSize={px(11)}
+              >
+                {formatLength(dist(roomDraft[roomDraft.length - 1]!, mouse), units)}
+              </text>
+            )}
+            {roomDraft.map((q, i) => (
+              <circle
+                key={i}
+                cx={q.x}
+                cy={q.y}
+                r={px(i === 0 && roomDraft.length >= 3 ? 6 : 3)}
+                className={i === 0 && roomDraft.length >= 3 ? "fill-paper stroke-blueprint" : "fill-blueprint"}
+                strokeWidth={px(1.5)}
+              />
+            ))}
+          </g>
         )}
 
         {/* cursor crosshair */}
