@@ -1,4 +1,4 @@
-import type { Door, FurniturePlacement, FurniturePrimitive, PlanData, Point, Units, Wall } from "./types";
+import type { Door, Room, FurniturePlacement, FurniturePrimitive, PlanData, Point, Units, Wall } from "./types";
 
 export const CM_PER_FOOT = 30.48;
 
@@ -359,6 +359,133 @@ export function snapToWallFace(p: Point, walls: Wall[], tol: number): Point | nu
     const q = { x: c.x + n.x * side * (w.thickness / 2), y: c.y + n.y * side * (w.thickness / 2) };
     const d = dist(p, q);
     if (d <= tol && (!best || d < best.d)) best = { q, d };
+  }
+  return best?.q ?? null;
+}
+
+// ---------- Room polygons ----------
+
+export function polygonArea(pts: Point[]): number {
+  let a = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i]!, q = pts[(i + 1) % pts.length]!;
+    a += p.x * q.y - q.x * p.y;
+  }
+  return Math.abs(a) / 2;
+}
+
+export function polygonCentroid(pts: Point[]): Point {
+  let a = 0, cx = 0, cy = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i]!, q = pts[(i + 1) % pts.length]!;
+    const f = p.x * q.y - q.x * p.y;
+    a += f;
+    cx += (p.x + q.x) * f;
+    cy += (p.y + q.y) * f;
+  }
+  if (Math.abs(a) < 1e-6) {
+    const n = pts.length || 1;
+    return { x: pts.reduce((s, p) => s + p.x, 0) / n, y: pts.reduce((s, p) => s + p.y, 0) / n };
+  }
+  return { x: cx / (3 * a), y: cy / (3 * a) };
+}
+
+/** Point-in-polygon test — used to keep the label inside L-shaped rooms. */
+export function pointInPolygon(p: Point, pts: Point[]): boolean {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const a = pts[i]!, b = pts[j]!;
+    if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
+export function roomPolygon(r: Room): Point[] {
+  if (r.points && r.points.length >= 3) return r.points;
+  const hw = r.width / 2, hh = r.height / 2;
+  return [
+    { x: r.center_x - hw, y: r.center_y - hh },
+    { x: r.center_x + hw, y: r.center_y - hh },
+    { x: r.center_x + hw, y: r.center_y + hh },
+    { x: r.center_x - hw, y: r.center_y + hh },
+  ];
+}
+
+/** Label anchor: centroid, or the widest interior point on its horizontal line for concave shapes. */
+function labelPoint(pts: Point[]): Point {
+  const c = polygonCentroid(pts);
+  if (pointInPolygon(c, pts)) return c;
+  const xs: number[] = [];
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i]!, b = pts[(i + 1) % pts.length]!;
+    if ((a.y > c.y) !== (b.y > c.y)) xs.push(a.x + ((c.y - a.y) / (b.y - a.y)) * (b.x - a.x));
+  }
+  xs.sort((m, n) => m - n);
+  let best = c, bw = -1;
+  for (let i = 0; i + 1 < xs.length; i += 2) {
+    if (xs[i + 1]! - xs[i]! > bw) { bw = xs[i + 1]! - xs[i]!; best = { x: (xs[i]! + xs[i + 1]!) / 2, y: c.y }; }
+  }
+  return best;
+}
+
+/** Room geometry fields (area, bbox, label) derived from a polygon. */
+export function roomFromPolygon(pts: Point[]): Pick<Room, "points" | "area" | "center_x" | "center_y" | "width" | "height"> {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of pts) { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); }
+  const l = labelPoint(pts);
+  return { points: pts, area: Math.round(polygonArea(pts) / 100) / 100, center_x: l.x, center_y: l.y, width: maxX - minX, height: maxY - minY };
+}
+
+export function polygonPerimeter(pts: Point[]): number {
+  let s = 0;
+  for (let i = 0; i < pts.length; i++) s += dist(pts[i]!, pts[(i + 1) % pts.length]!);
+  return s;
+}
+
+export function translateRoom(r: Room, dx: number, dy: number): Room {
+  return {
+    ...r,
+    center_x: r.center_x + dx,
+    center_y: r.center_y + dy,
+    points: r.points?.map((p) => ({ x: p.x + dx, y: p.y + dy })),
+  };
+}
+
+/** Legacy rectangular rooms were drawn on wall axes: pull each side back to the wall face. */
+export function insetRectRoomToWalls(r: Room, walls: Wall[]): Room {
+  if (r.points && r.points.length >= 3) return r;
+  let x1 = r.center_x - r.width / 2, x2 = r.center_x + r.width / 2;
+  let y1 = r.center_y - r.height / 2, y2 = r.center_y + r.height / 2;
+  const tol = 2;
+  const half = (axis: "h" | "v", v: number, a: number, b: number) => {
+    let t = 0;
+    for (const w of walls) {
+      const horiz = Math.abs(w.start_y - w.end_y) < tol, vert = Math.abs(w.start_x - w.end_x) < tol;
+      if (axis === "h" && horiz && Math.abs(w.start_y - v) < tol) {
+        const lo = Math.min(w.start_x, w.end_x), hi = Math.max(w.start_x, w.end_x);
+        if (Math.min(hi, b) - Math.max(lo, a) > 1) t = Math.max(t, w.thickness / 2);
+      }
+      if (axis === "v" && vert && Math.abs(w.start_x - v) < tol) {
+        const lo = Math.min(w.start_y, w.end_y), hi = Math.max(w.start_y, w.end_y);
+        if (Math.min(hi, b) - Math.max(lo, a) > 1) t = Math.max(t, w.thickness / 2);
+      }
+    }
+    return t;
+  };
+  const tT = half("h", y1, x1, x2), tB = half("h", y2, x1, x2), tL = half("v", x1, y1, y2), tR = half("v", x2, y1, y2);
+  x1 += tL; x2 -= tR; y1 += tT; y2 -= tB;
+  return { ...r, ...roomFromPolygon([{ x: x1, y: y1 }, { x: x2, y: y1 }, { x: x2, y: y2 }, { x: x1, y: y2 }]) };
+}
+
+/** Snaps to inner/outer wall-outline corners (face intersections). */
+export function snapToWallCorner(p: Point, walls: Wall[], tol: number): Point | null {
+  let best: { q: Point; d: number } | null = null;
+  for (const w of walls) {
+    if (wallLength(w) < 1) continue;
+    for (const q of wallOutline(w, walls).pts) {
+      const d = dist(p, q);
+      if (d <= tol && (!best || d < best.d)) best = { q, d };
+    }
   }
   return best?.q ?? null;
 }
