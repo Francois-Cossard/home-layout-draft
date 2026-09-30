@@ -40,7 +40,6 @@ type Drag =
   | { kind: "pan"; startClient: Point; startPan: Point }
   | { kind: "move"; elKind: ElementKind; id: string; startWorld: Point; snapshot: PlanData }
   | { kind: "endpoint"; id: string; end: "start" | "end" }
-  | { kind: "room-draw"; start: Point }
   | null;
 
 interface ContextMenuState {
@@ -217,6 +216,34 @@ export function PlanCanvas({ readOnly = false, onContextMenu, viewRef }: Props) 
   );
 
   /* ---------- pointer handlers ---------- */
+  const finishRoom = (pts: Point[]) => {
+    setRoomDraft(null);
+    if (!project || pts.length < 3) return;
+    const geo = roomFromPolygon(pts);
+    if (geo.area < 0.1) return;
+    const room: Room = { id: uid(), project_id: project.id, name: `Room ${project.rooms.length + 1}`, ...geo };
+    commit((d) => ({ ...d, rooms: [...d.rooms, room] }));
+    select({ kind: "room", id: room.id });
+    setTool("select");
+  };
+  const roomDraftRef = useRef(roomDraft);
+  roomDraftRef.current = roomDraft;
+  const finishRoomRef = useRef(finishRoom);
+  finishRoomRef.current = finishRoom;
+
+  useEffect(() => {
+    if (tool !== "room") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement) return;
+      const pts = roomDraftRef.current;
+      if (!pts) return;
+      if (e.key === "Enter") { e.preventDefault(); finishRoomRef.current(pts); }
+      if (e.key === "Backspace") { e.preventDefault(); e.stopPropagation(); setRoomDraft(pts.length > 1 ? pts.slice(0, -1) : null); }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [tool]);
+
   const onPointerDown = (e: RPointerEvent<SVGSVGElement>) => {
     if (!project) return;
     if (e.button === 2) return;
